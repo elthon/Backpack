@@ -18,6 +18,49 @@
 #define FONT_W              (6)     // Actually 5x7 + 1 pixel space
 #define FONT_H              (8)
 
+
+// 计算两点之间的距离（单位：米）
+// 计算两点之间的距离（米）和方位角（度，0-360）
+static void calcDistAndAzimuth2(int32_t srcLat, int32_t srcLon, int32_t dstLat, int32_t dstLon,
+    uint32_t *out_dist, uint32_t *out_azimuth) {
+// 将输入的纬度、经度（1e7度）转换为浮点度数
+double lat1 = (double)srcLat / 1e7;
+double lon1 = (double)srcLon / 1e7;
+double lat2 = (double)dstLat / 1e7;
+double lon2 = (double)dstLon / 1e7;
+
+// 转换为弧度
+double phi1 = DEG2RAD(lat1);
+double phi2 = DEG2RAD(lat2);
+double deltaPhi = DEG2RAD(lat2 - lat1);
+double deltaLambda = DEG2RAD(lon2 - lon1);
+
+// 计算距离（Haversine公式）
+if (out_dist) {
+    const double R = 6371e3;
+double a = sin(deltaPhi / 2.0) * sin(deltaPhi / 2.0) +
+cos(phi1) * cos(phi2) *
+sin(deltaLambda / 2.0) * sin(deltaLambda / 2.0);
+double c = 2.0 * atan2(sqrt(a), sqrt(1.0 - a));
+double distance = R * c; // 距离（米）
+*out_dist = (uint32_t)distance; // 转换为整数
+}
+
+// 计算方位角
+if (out_azimuth) {
+double sinDeltaLambda = sin(deltaLambda);
+double cosPhi2 = cos(phi2);
+
+// 方位角公式：atan2(sin(Δλ) * cos(φ2), cos(φ1) * sin(φ2) - sin(φ1) * cos(φ2) * cos(Δλ))
+double X = sinDeltaLambda * cosPhi2;
+double Y = cos(phi1) * sin(phi2) - sin(phi1) * cosPhi2 * cos(deltaLambda);
+uint32_t hdg = (uint32_t)RAD2DEG(atan2(X, Y));
+
+// 归一化为0-360度
+*out_azimuth = (hdg + 360) % 360;
+}
+}
+
 static void calcDistAndAzimuth(int32_t srcLat, int32_t srcLon, int32_t dstLat, int32_t dstLon,
     uint32_t *out_dist, uint32_t *out_azimuth)
 {
@@ -202,7 +245,7 @@ void AatModule::processGps(uint32_t now)
 
     uint32_t azimuth;
     uint32_t distance;
-    calcDistAndAzimuth(_home.lat, _home.lon, _gpsLast.lat, _gpsLast.lon, &distance, &azimuth);
+    calcDistAndAzimuth2(_home.lat, _home.lon, _gpsLast.lat, _gpsLast.lon, &distance, &azimuth);
     uint8_t elevation = constrain(calcElevation(distance, _gpsLast.altitude - _home.alt), 0, 90);
     DBGLN("Azimuth: %udeg Elevation: %udeg Distance: %um", azimuth, elevation, distance);
 
