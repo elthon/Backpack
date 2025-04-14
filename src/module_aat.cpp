@@ -115,11 +115,21 @@ void AatModule::Init()
 #endif
     _servoPos[IDX_AZIM] = (config.GetAatServoLow(IDX_AZIM) + config.GetAatServoHigh(IDX_AZIM)) / 2;
 #if defined(PIN_SERVO_AZIM)
-    _servo_Azim.attach(PIN_SERVO_AZIM, 500, 2500, _servoPos[IDX_AZIM]);
+    #if defined(ESP32)
+        _servo_Azim.attach(PIN_SERVO_AZIM, 500, 2500);
+        _servo_Azim.writeMicroseconds(_servoPos[IDX_AZIM]); //ESP32 Servo API，默认启动后设置中点位置
+    #else
+        _servo_Azim.attach(PIN_SERVO_AZIM, 500, 2500, _servoPos[IDX_AZIM]);
+    #endif
 #endif
     _servoPos[IDX_ELEV] = (config.GetAatServoLow(IDX_ELEV) + config.GetAatServoHigh(IDX_ELEV)) / 2;
 #if defined(PIN_SERVO_ELEV)
-    _servo_Elev.attach(PIN_SERVO_ELEV, 500, 2500, _servoPos[IDX_ELEV]);
+    #if defined(ESP32)
+        _servo_Elev.attach(PIN_SERVO_ELEV, 500, 2500);
+        _servo_Elev.writeMicroseconds(_servoPos[IDX_ELEV]);
+    #else
+        _servo_Elev.attach(PIN_SERVO_ELEV, 500, 2500, _servoPos[IDX_ELEV]);
+    #endif
 #endif
 #if defined(PIN_OLED_SDA)
     displayInit();
@@ -538,14 +548,14 @@ void AatModule::servoApplyMode(int32_t azim, int32_t elev, int32_t newServoPos[]
 
     if ((ServoMode)config.GetAatServoMode() == ServoMode::Flip180)
     {
-        if (bearing < -90)
+        if (bearing < -90) 
         {
-            bearing = -180 - bearing;
-            elev = 180 - elev;
+            bearing = 180 + bearing;  //修改之前代码逻辑，这样翻转正常了。
+            elev = 180 - elev;        
         }
         else if (bearing > 90)
         {
-            bearing = 180 - bearing;
+            bearing = -(180 - bearing);
             elev = 180 - elev;
         }
         newServoPos[IDX_AZIM] = map(bearing, -90, 90, config.GetAatServoLow(IDX_AZIM), config.GetAatServoHigh(IDX_AZIM));

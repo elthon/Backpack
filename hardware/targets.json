@@ -550,6 +550,12 @@
                 "firmware": "AAT_ESP_Backpack",
                 "upload_methods": ["uart", "wifi"],
                 "platform": "esp8285"
+            },
+            "eps32": {
+                "product_name": "MAKER-ESP32-PRO",
+                "firmware": "AAT_MAKER_ESP32_PRO_Backpack",
+                "upload_methods": ["uart", "wifi"],
+                "platform": "esp32"
             }
         }
     },

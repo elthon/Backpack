@@ -7,7 +7,11 @@
 #include "devWIFI.h"
 
 #if defined(PIN_SERVO_AZIM) || defined(PIN_SERVO_ELEV)
-#include <Servo.h>
+    #if defined(ESP32) /// 使用 ESP32 Servo库，默认的Servo不兼容。
+        #include <ESP32Servo.h>
+    #else
+        #include <Servo.h>
+    #endif
 #endif
 
 #if defined(PIN_OLED_SDA)
