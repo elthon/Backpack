@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GPS to CRSF Converter</title>
+    <script src="https://maps.googleapis.com/maps/api/js?key=REPLACE_WITH_YOUR_API_KEY"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+        #app {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+        #controls {
+            padding: 1rem;
+            background-color: #f9fafb;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            z-index: 10;
+        }
+        #map {
+            flex: 1;
+            min-height: 0;
+        }
+        #notification {
+            transition: transform 0.3s ease-in-out, opacity 0.3s ease-in-out;
+            transform: translateY(-100%);
+            opacity: 0;
+            position: fixed;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 20;
+        }
+        #notification.show {
+            transform: translateY(0) translateX(-50%);
+            opacity: 1;
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <div id="notification" class="hidden bg-green-500 text-white px-4 py-2 rounded-b-md shadow-lg">
+            Processing started successfully!
+        </div>
+        <div id="controls" class="flex flex-wrap gap-4 items-end">
+            <div>
+                <label for="filename" class="block text-sm font-medium text-gray-700">Filename</label>
+                <input type="text" id="filename" value="/Users/elthon/Downloads/blackbox-decode/LOG00054.01.gps.csv" class="mt-1 block w-48 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+            </div>
+            <div>
+                <label for="baud" class="block text-sm font-medium text-gray-700">Baud</label>
+                <input type="text" id="baud" value="460800" class="mt-1 block w-32 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+            </div>
+            <div>
+                <label for="port" class="block text-sm font-medium text-gray-700">Port</label>
+                <input type="text" id="port" value="/dev/cu.wchusbserial1140" class="mt-1 block w-32 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+            </div>
+            <div>
+                <label for="interval" class="block text-sm font-medium text-gray-700">Interval (s)</label>
+                <input type="text" id="interval" value="0.5" class="mt-1 block w-24 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+            </div>
+            <div>
+                <label for="jitter" class="block text-sm font-medium text-gray-700">Jitter (s)</label>
+                <input type="text" id="jitter" value="0.0" class="mt-1 block w-24 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+            </div>
+            <div>
+                <label for="base_time" class="block text-sm font-medium text-gray-700">Base Time (UTC)</label>
+                <input type="text" id="base_time" value="2024-11-16T07:40:44.212029Z" class="mt-1 block w-56 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+            </div>
+            <div class="flex items-center">
+                <input type="checkbox" id="msp" class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded">
+                <label for="msp" class="ml-2 block text-sm text-gray-900">MSP</label>
+            </div>
+            <div>
+                <button id="startButton" onclick="startProcessing()" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                    Start Processing
+                </button>
+            </div>
+        </div>
+        <div id="map"></div>
+    </div>
+    <script>
+        let map, polyline, markers = [];
+        let isProcessing = false;
+        let updateInterval = null;
+        let lastDataLength = 0;
+        let noDataTimeout = null;
+
+        function initMap() {
+            
+            map = new google.maps.Map(document.getElementById('map'), {
+                zoom: 15,
+                center: {lat: 28.2758, lng: 113.1502},
+                mapTypeId: google.maps.MapTypeId.SATELLITE
+            });
+            polyline = new google.maps.Polyline({
+                path: [],
+                geodesic: true,
+                strokeColor: 'yellow',
+                strokeOpacity: 1.0,
+                strokeWeight: 2,
+                map: map
+            });
+        }
+
+        function showNotification(message, isError = false) {
+            const notification = document.getElementById('notification');
+            notification.textContent = message;
+            notification.classList.remove('hidden', 'bg-green-500', 'bg-red-500');
+            notification.classList.add(isError ? 'bg-red-500' : 'bg-green-500');
+            notification.classList.add('show');
+            setTimeout(() => {
+                notification.classList.remove('show');
+                setTimeout(() => {
+                    notification.classList.add('hidden');
+                }, 300);
+            }, 3000);
+        }
+
+        function renderMap(data) {
+            if (data.length > 0) {
+                const path = data.map(point => ({lat: point.lat, lng: point.lng}));
+                polyline.setPath(path);
+                map.setCenter(path[path.length - 1]);
+                markers.forEach(marker => marker.setMap(null));
+                markers = [];
+
+                // Only add marker for the latest point
+                const latestPoint = data[data.length - 1];
+                console.log('Latest point ground_course:', latestPoint.ground_course);
+                console.log('Applying rotation:', latestPoint.ground_course || 0);
+                const svgAirplane = {
+                    path: "M0 -15 C-2 -13 -3 -10 -3 -8 L-10 -2 C-12 0 -10 2 -8 3 L-6 8 C-5 9 -3 10 -1 10 H1 C3 10 5 9 6 8 L8 3 C10 2 12 0 10 -2 L3 -8 C3 -10 2 -13 0 -15 Z M-2 6 L-3 8 H3 L2 6 Z",
+                    fillColor: "none",
+                    fillOpacity: 0,
+                    strokeColor: "red",
+                    strokeWeight: 1,
+                    rotation: latestPoint.ground_course || 0,
+                    scale: 1.0,
+                    anchor: new google.maps.Point(0, 0)
+                };
+                const marker = new google.maps.Marker({
+                    position: {lat: latestPoint.lat, lng: latestPoint.lng},
+                    map: map,
+                    icon: svgAirplane
+                });
+                const infoWindow = new google.maps.InfoWindow({
+                    content: `Time: ${latestPoint.time}<br>Lat: ${latestPoint.lat}<br>Lng: ${latestPoint.lng}<br>Alt: ${latestPoint.alt}m<br>Course: ${latestPoint.ground_course || 'N/A'}°`
+                });
+                marker.addListener('click', () => {
+                    infoWindow.open(map, marker);
+                });
+                markers.push(marker);
+
+                lastDataLength = data.length;
+            }
+        }
+
+        function updateMap() {
+            fetch('/gps_data')
+                .then(response => response.json())
+                .then(data => {
+                    renderMap(data);
+                    if (data.length === lastDataLength && isProcessing) {
+                        if (!noDataTimeout) {
+                            noDataTimeout = setTimeout(() => {
+                                if (data.length === lastDataLength) {
+                                    stopProcessing();
+                                    showNotification('GPS data processing completed.');
+                                }
+                            }, 10000);
+                        }
+                    } else {
+                        if (noDataTimeout) {
+                            clearTimeout(noDataTimeout);
+                            noDataTimeout = null;
+                        }
+                    }
+                    lastDataLength = data.length;
+                })
+                .catch(error => {
+                    if (isProcessing) {
+                        stopProcessing();
+                        showNotification('Error fetching GPS data: ' + error.message, true);
+                    }
+                });
+        }
+
+        function startProcessing() {
+            if (isProcessing) return;
+
+            const button = document.getElementById('startButton');
+            button.disabled = true;
+            button.classList.add('opacity-50', 'cursor-not-allowed');
+
+            fetch('/start', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    filename: document.getElementById('filename').value,
+                    baud: document.getElementById('baud').value,
+                    port: document.getElementById('port').value,
+                    interval: document.getElementById('interval').value,
+                    jitter: document.getElementById('jitter').value,
+                    msp: document.getElementById('msp').checked,
+                    base_time: document.getElementById('base_time').value
+                })
+            }).then(response => {
+                if (!response.ok) {
+                    throw new Error('Failed to start processing');
+                }
+                return response.json();
+            }).then(data => {
+                isProcessing = true;
+                showNotification('Processing started successfully!');
+                updateInterval = setInterval(updateMap, 1000);
+            }).catch(error => {
+                button.disabled = false;
+                button.classList.remove('opacity-50', 'cursor-not-allowed');
+                showNotification('Error starting processing: ' + error.message, true);
+            });
+        }
+
+        function stopProcessing() {
+            if (!isProcessing) return;
+            isProcessing = false;
+            const button = document.getElementById('startButton');
+            button.disabled = false;
+            button.classList.remove('opacity-50', 'cursor-not-allowed');
+            if (updateInterval) {
+                clearInterval(updateInterval);
+                updateInterval = null;
+            }
+            if (noDataTimeout) {
+                clearTimeout(noDataTimeout);
+                noDataTimeout = null;
+            }
+            lastDataLength = 0;
+        }
+
+        function initialize() {
+            initMap();
+            fetch('/status')
+                .then(response => response.json())
+                .then(status => {
+                    const button = document.getElementById('startButton');
+                    if (status.isRunning) {
+                        isProcessing = true;
+                        button.disabled = true;
+                        button.classList.add('opacity-50', 'cursor-not-allowed');
+                        updateInterval = setInterval(updateMap, 1000);
+                        showNotification('Resumed active GPS processing.');
+                    } else if (status.dataLength > 0) {
+                        fetch('/gps_data')
+                            .then(response => response.json())
+                            .then(data => {
+                                renderMap(data);
+                                showNotification('Loaded previous GPS data.');
+                            });
+                    }
+                })
+                .catch(error => {
+                    showNotification('Error checking status: ' + error.message, true);
+                });
+        }
+
+        initialize();
+    </script>
+</body>
+</html>
