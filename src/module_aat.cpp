@@ -18,6 +18,10 @@
 #define FONT_W              (6)     // Actually 5x7 + 1 pixel space
 #define FONT_H              (8)
 
+#ifdef LOCAL_GPS
+#include "GNSSDevice.h"
+extern GNSSDevice gnssDevice;
+#endif
 
 // 计算两点之间的距离（单位：米）
 // 计算两点之间的距离（米）和方位角（度，0-360）
@@ -229,19 +233,30 @@ void AatModule::processGps(uint32_t now)
 
     // Check if need to set home position
     bool didSetHome = false;
-    if (!isHomeSet())
-    {
-        if (_gpsLast.satcnt >= config.GetAatSatelliteHomeMin())
-        {
-            didSetHome = true;
-            _home.lat = _gpsLast.lat;
-            _home.lon = _gpsLast.lon;
-            _home.alt = _gpsLast.altitude;
-            DBGLN("GPS Home set to (%d,%d)", _home.lat, _home.lon);
-        }
-        else
-            return;
+    #ifdef LOCAL_GPS
+    if (gnssDevice.getSatellites()  >= config.GetAatSatelliteHomeMin()){
+        _home.lat = int(gnssDevice.getLatitude()*1e7);
+        _home.lon = int(gnssDevice.getLongitude()*1e7);
+        _home.alt = int(gnssDevice.getAltitude()) + 1000;
+        DBGLN("GPS Home set to (%d,%d)", _home.lat, _home.lon);
     }
+    #else
+        if (!isHomeSet())
+        {
+            if (_gpsLast.satcnt >= config.GetAatSatelliteHomeMin())
+            {
+                didSetHome = true;
+                _home.lat = _gpsLast.lat;
+                _home.lon = _gpsLast.lon;
+                _home.alt = _gpsLast.altitude;
+                DBGLN("GPS Home set to (%d,%d)", _home.lat, _home.lon);
+            }
+            else
+                return;
+        }
+    #endif
+
+
 
     uint32_t azimuth;
     uint32_t distance;

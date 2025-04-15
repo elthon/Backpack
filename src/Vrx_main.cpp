@@ -25,6 +25,10 @@
 #include "devLED.h"
 #include "devHeadTracker.h"
 
+#ifdef LOCAL_GPS
+#include "GNSSDevice.h"
+#endif
+
 #ifdef RAPIDFIRE_BACKPACK
   #include "rapidfire.h"
 #elif defined(RX5808_BACKPACK)
@@ -75,7 +79,18 @@ bool gotInitialPacket = false;
 bool headTrackingEnabled = false;
 uint32_t lastSentRequest = 0;
 
+
+#ifdef LOCAL_GPS
+// Define the serial port for GNSS (e.g., Serial1 on most Arduino boards)
+HardwareSerial* gnssSerial = &Serial1;
+// Create GNSSDevice instance
+GNSSDevice gnssDevice(gnssSerial);
+#endif
+
 device_t *ui_devices[] = {
+#ifdef LOCAL_GPS
+  &gnssDevice.device,
+#endif
 #ifdef PIN_LED
   &LED_device,
 #endif

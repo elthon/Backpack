@@ -7,3 +7,4 @@ __pycache__
 include/WebContent.h
 super_defines.txt
 .DS_Store
+python/utils/gps_data.json
